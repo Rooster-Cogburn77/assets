@@ -1,0 +1,58 @@
+# Build stage
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy workspace files
+COPY package.json package-lock.json* ./
+COPY packages/backend/package.json ./packages/backend/
+
+# Install dependencies
+RUN npm ci --workspace=@claude-console/backend
+
+# Copy source
+COPY packages/backend ./packages/backend
+
+# Build
+RUN npm run build:backend
+
+# Production stage
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Install Claude Code CLI (assuming it's available via npm)
+# RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 claude
+
+# Copy built files
+COPY --from=builder /app/packages/backend/dist ./dist
+COPY --from=builder /app/packages/backend/package.json ./
+
+# Install production dependencies only
+RUN npm install --omit=dev
+
+# Create data directory
+RUN mkdir -p /app/data && chown -R claude:nodejs /app/data
+
+# Switch to non-root user
+USER claude
+
+# Environment
+ENV NODE_ENV=production
+ENV PORT=3001
+ENV HOST=0.0.0.0
+ENV DB_PATH=/app/data/claude-console.db
+
+# Expose port
+EXPOSE 3001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+
+# Start
+CMD ["node", "dist/index.js"]

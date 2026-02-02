@@ -1,0 +1,53 @@
+version: '3.8'
+
+# Development compose file - use with:
+# docker-compose -f docker/docker-compose.dev.yml up
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+      target: builder
+    container_name: claude-console-backend-dev
+    command: npm run dev -w @claude-console/backend
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - HOST=0.0.0.0
+      - DB_PATH=/app/data/claude-console.db
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+      - LOG_LEVEL=debug
+    volumes:
+      - ../packages/backend/src:/app/packages/backend/src
+      - claude-console-data-dev:/app/data
+    ports:
+      - "3001:3001"
+    networks:
+      - claude-console-network-dev
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+      target: builder
+    container_name: claude-console-frontend-dev
+    command: npm run dev -w @claude-console/frontend -- --host
+    environment:
+      - NODE_ENV=development
+    volumes:
+      - ../packages/frontend/src:/app/packages/frontend/src
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - claude-console-network-dev
+
+networks:
+  claude-console-network-dev:
+    driver: bridge
+
+volumes:
+  claude-console-data-dev:
+    driver: local

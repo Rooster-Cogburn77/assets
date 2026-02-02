@@ -1,0 +1,36 @@
+{
+  "name": "claude-console",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Enterprise-grade local UI for Claude Code - Real-time streaming, session management, and beautiful interface",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm run dev -w @claude-console/backend",
+    "dev:frontend": "npm run dev -w @claude-console/frontend",
+    "build": "npm run build -w @claude-console/backend && npm run build -w @claude-console/frontend",
+    "build:backend": "npm run build -w @claude-console/backend",
+    "build:frontend": "npm run build -w @claude-console/frontend",
+    "start": "npm run start -w @claude-console/backend",
+    "lint": "npm run lint -w @claude-console/backend && npm run lint -w @claude-console/frontend",
+    "typecheck": "npm run typecheck -w @claude-console/backend && npm run typecheck -w @claude-console/frontend",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
+    "docker:build": "docker-compose -f docker/docker-compose.yml build",
+    "docker:up": "docker-compose -f docker/docker-compose.yml up",
+    "docker:down": "docker-compose -f docker/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/claude-console"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,272 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
+
+@layer base {
+  * {
+    @apply border-dark-700;
+  }
+
+  body {
+    @apply bg-dark-900 text-dark-100;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-600 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-dark-500;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(86 88 105) transparent;
+  }
+}
+
+/* ============================================================================
+   Component Styles
+   ============================================================================ */
+
+@layer components {
+  /* Button styles */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-900;
+  }
+
+  .btn-primary {
+    @apply btn bg-claude-orange text-white hover:bg-claude-orange-dark focus:ring-claude-orange;
+  }
+
+  .btn-secondary {
+    @apply btn bg-dark-700 text-dark-100 hover:bg-dark-600 focus:ring-dark-500;
+  }
+
+  .btn-ghost {
+    @apply btn bg-transparent text-dark-300 hover:bg-dark-800 hover:text-dark-100 focus:ring-dark-500;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .btn-icon {
+    @apply p-2 rounded-lg text-dark-400 hover:text-dark-100 hover:bg-dark-800 transition-colors;
+  }
+
+  /* Input styles */
+  .input {
+    @apply w-full px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-dark-100 placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-claude-orange focus:border-transparent transition-all duration-200;
+  }
+
+  .input-lg {
+    @apply input py-3 text-base;
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-dark-800 border border-dark-700 rounded-xl;
+  }
+
+  /* Message bubble styles */
+  .message-user {
+    @apply bg-dark-700 rounded-2xl rounded-br-md px-4 py-3;
+  }
+
+  .message-assistant {
+    @apply bg-transparent;
+  }
+
+  /* Code block styles */
+  .code-block {
+    @apply bg-dark-950 rounded-lg overflow-hidden border border-dark-700;
+  }
+
+  .code-header {
+    @apply flex items-center justify-between px-4 py-2 bg-dark-800 border-b border-dark-700 text-xs text-dark-400;
+  }
+
+  /* Tool execution styles */
+  .tool-card {
+    @apply bg-dark-800/50 border border-dark-700 rounded-lg p-3 my-2;
+  }
+
+  .tool-running {
+    @apply border-l-2 border-l-claude-orange;
+  }
+
+  .tool-completed {
+    @apply border-l-2 border-l-green-500;
+  }
+
+  .tool-error {
+    @apply border-l-2 border-l-red-500;
+  }
+
+  /* Session item styles */
+  .session-item {
+    @apply flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-colors hover:bg-dark-800;
+  }
+
+  .session-item-active {
+    @apply session-item bg-dark-700 hover:bg-dark-700;
+  }
+}
+
+/* ============================================================================
+   Utility Styles
+   ============================================================================ */
+
+@layer utilities {
+  /* Text utilities */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Animation utilities */
+  .animate-in {
+    animation: animate-in 0.2s ease-out;
+  }
+
+  @keyframes animate-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Prose adjustments for dark mode */
+  .prose-invert {
+    --tw-prose-body: theme(colors.dark.200);
+    --tw-prose-headings: theme(colors.dark.100);
+    --tw-prose-links: theme(colors.claude.orange);
+    --tw-prose-code: theme(colors.dark.100);
+    --tw-prose-pre-bg: theme(colors.dark.950);
+  }
+
+  /* Gradient mask for overflow */
+  .mask-gradient {
+    mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+  }
+
+  /* Typing indicator */
+  .typing-indicator {
+    @apply flex gap-1;
+  }
+
+  .typing-indicator span {
+    @apply w-2 h-2 bg-dark-500 rounded-full animate-bounce;
+  }
+
+  .typing-indicator span:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing-indicator span:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+/* ============================================================================
+   Markdown/Prose Styles
+   ============================================================================ */
+
+.markdown-content {
+  @apply text-dark-200 leading-relaxed;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
+  @apply text-dark-100 font-semibold mt-6 mb-3;
+}
+
+.markdown-content h1 {
+  @apply text-2xl;
+}
+
+.markdown-content h2 {
+  @apply text-xl;
+}
+
+.markdown-content h3 {
+  @apply text-lg;
+}
+
+.markdown-content p {
+  @apply mb-4;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply mb-4 pl-6;
+}
+
+.markdown-content ul {
+  @apply list-disc;
+}
+
+.markdown-content ol {
+  @apply list-decimal;
+}
+
+.markdown-content li {
+  @apply mb-1;
+}
+
+.markdown-content a {
+  @apply text-claude-orange hover:text-claude-orange-light underline underline-offset-2;
+}
+
+.markdown-content code:not(pre code) {
+  @apply bg-dark-800 text-claude-orange-light px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.markdown-content pre {
+  @apply my-4 rounded-lg overflow-hidden;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-dark-600 pl-4 italic text-dark-400 my-4;
+}
+
+.markdown-content hr {
+  @apply border-dark-700 my-6;
+}
+
+.markdown-content table {
+  @apply w-full border-collapse my-4;
+}
+
+.markdown-content th,
+.markdown-content td {
+  @apply border border-dark-700 px-4 py-2 text-left;
+}
+
+.markdown-content th {
+  @apply bg-dark-800 font-semibold;
+}
+
+.markdown-content img {
+  @apply max-w-full rounded-lg my-4;
+}
