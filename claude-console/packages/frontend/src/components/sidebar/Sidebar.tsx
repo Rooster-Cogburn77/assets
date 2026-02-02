@@ -23,11 +23,6 @@ export const Sidebar: React.FC = () => {
     await createSession();
   };
 
-  const handleArchiveSession = async (sessionId: string) => {
-    // For now, just delete - archive functionality can be added later
-    await deleteSession(sessionId);
-  };
-
   if (!sidebarOpen) {
     return (
       <div className="w-16 flex flex-col items-center py-4 bg-dark-900 border-r border-dark-800">
@@ -104,7 +99,6 @@ export const Sidebar: React.FC = () => {
                 onSelect={() => selectSession(session.id)}
                 onRename={(name) => renameSession(session.id, name)}
                 onDelete={() => deleteSession(session.id)}
-                onArchive={() => handleArchiveSession(session.id)}
               />
             ))}
           </div>

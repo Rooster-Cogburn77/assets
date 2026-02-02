@@ -41,7 +41,6 @@ interface ClientToServerEvents {
   'session:get': (sessionId: string, callback: (response: SessionDetailResponse) => void) => void;
   'session:delete': (sessionId: string, callback: (response: BaseResponse) => void) => void;
   'session:rename': (data: RenameSessionRequest, callback: (response: SessionResponse) => void) => void;
-  'session:archive': (sessionId: string, callback: (response: SessionResponse) => void) => void;
   'message:send': (data: SendMessageRequest) => void;
   'message:cancel': (sessionId: string) => void;
 }
@@ -242,23 +241,6 @@ class SocketService {
           resolve(response.session);
         } else {
           reject(new Error(response.error ?? 'Failed to rename session'));
-        }
-      });
-    });
-  }
-
-  async archiveSession(sessionId: string): Promise<Session> {
-    return new Promise((resolve, reject) => {
-      if (!this.socket) {
-        reject(new Error('Not connected'));
-        return;
-      }
-
-      this.socket.emit('session:archive', sessionId, (response) => {
-        if (response.success && response.session) {
-          resolve(response.session);
-        } else {
-          reject(new Error(response.error ?? 'Failed to archive session'));
         }
       });
     });

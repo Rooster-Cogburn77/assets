@@ -53,56 +53,63 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
           />
         );
       },
-      pre: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-      p: ({ children }: { children: React.ReactNode }) => (
+      pre: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+      p: ({ children }: { children?: React.ReactNode }) => (
         <p className="mb-3 last:mb-0">{children}</p>
       ),
-      ul: ({ children }: { children: React.ReactNode }) => (
+      ul: ({ children }: { children?: React.ReactNode }) => (
         <ul className="list-disc pl-6 mb-3 space-y-1">{children}</ul>
       ),
-      ol: ({ children }: { children: React.ReactNode }) => (
+      ol: ({ children }: { children?: React.ReactNode }) => (
         <ol className="list-decimal pl-6 mb-3 space-y-1">{children}</ol>
       ),
-      li: ({ children }: { children: React.ReactNode }) => (
+      li: ({ children }: { children?: React.ReactNode }) => (
         <li className="text-dark-200">{children}</li>
       ),
-      a: ({ href, children }: { href?: string; children: React.ReactNode }) => (
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-claude-orange hover:text-claude-orange-light underline underline-offset-2"
-        >
-          {children}
-        </a>
-      ),
-      blockquote: ({ children }: { children: React.ReactNode }) => (
+      a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
+        // Validate URL - only allow http, https, and mailto protocols
+        const isSafeUrl = href && /^(https?:|mailto:)/i.test(href);
+        if (!isSafeUrl) {
+          return <span className="text-dark-400">{children}</span>;
+        }
+        return (
+          <a
+            href={href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-claude-orange hover:text-claude-orange-light underline underline-offset-2"
+          >
+            {children}
+          </a>
+        );
+      },
+      blockquote: ({ children }: { children?: React.ReactNode }) => (
         <blockquote className="border-l-4 border-dark-600 pl-4 italic text-dark-400 my-3">
           {children}
         </blockquote>
       ),
-      h1: ({ children }: { children: React.ReactNode }) => (
+      h1: ({ children }: { children?: React.ReactNode }) => (
         <h1 className="text-xl font-semibold text-dark-100 mt-4 mb-2">{children}</h1>
       ),
-      h2: ({ children }: { children: React.ReactNode }) => (
+      h2: ({ children }: { children?: React.ReactNode }) => (
         <h2 className="text-lg font-semibold text-dark-100 mt-4 mb-2">{children}</h2>
       ),
-      h3: ({ children }: { children: React.ReactNode }) => (
+      h3: ({ children }: { children?: React.ReactNode }) => (
         <h3 className="text-base font-semibold text-dark-100 mt-3 mb-2">{children}</h3>
       ),
-      table: ({ children }: { children: React.ReactNode }) => (
+      table: ({ children }: { children?: React.ReactNode }) => (
         <div className="overflow-x-auto my-3">
           <table className="min-w-full border-collapse border border-dark-700">
             {children}
           </table>
         </div>
       ),
-      th: ({ children }: { children: React.ReactNode }) => (
+      th: ({ children }: { children?: React.ReactNode }) => (
         <th className="border border-dark-700 bg-dark-800 px-4 py-2 text-left font-medium">
           {children}
         </th>
       ),
-      td: ({ children }: { children: React.ReactNode }) => (
+      td: ({ children }: { children?: React.ReactNode }) => (
         <td className="border border-dark-700 px-4 py-2">{children}</td>
       ),
     }),

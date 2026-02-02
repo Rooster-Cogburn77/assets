@@ -9,11 +9,11 @@ interface StreamingMessage {
 }
 
 interface SessionsState {
-  // Data
+  // Data - using objects instead of Maps for better Zustand compatibility
   sessions: Session[];
   currentSessionId: string | null;
-  messages: Map<string, Message[]>;
-  streamingMessages: Map<string, StreamingMessage>;
+  messages: Record<string, Message[]>;
+  streamingMessages: Record<string, StreamingMessage>;
 
   // Status
   isLoading: boolean;
@@ -34,8 +34,10 @@ interface SessionsState {
   clearError: () => void;
 }
 
+// Track in-flight session requests to prevent race conditions
+let pendingSessionRequest: string | null = null;
+
 export const useSessionsStore = create<SessionsState>((set, get) => {
-  // Set up socket event handlers
   const setupSocketHandlers = () => {
     socketService.on('connection:status', (data) => {
       set({ isConnected: data.connected });
@@ -43,55 +45,46 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
 
     socketService.on('message:start', (data) => {
       const { sessionId, messageId } = data;
-      set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        newStreamingMessages.set(sessionId, {
-          id: messageId,
-          content: '',
-          toolExecutions: [],
-        });
-        return { streamingMessages: newStreamingMessages, isSending: true };
-      });
+      set((state) => ({
+        streamingMessages: {
+          ...state.streamingMessages,
+          [sessionId]: { id: messageId, content: '', toolExecutions: [] },
+        },
+        isSending: true,
+      }));
     });
 
     socketService.on('message:stream', (data) => {
       const { sessionId, fullContent } = data;
       set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        const current = newStreamingMessages.get(sessionId);
-        if (current) {
-          newStreamingMessages.set(sessionId, {
-            ...current,
-            content: fullContent,
-          });
-        }
-        return { streamingMessages: newStreamingMessages };
+        const current = state.streamingMessages[sessionId];
+        if (!current) return state;
+        return {
+          streamingMessages: {
+            ...state.streamingMessages,
+            [sessionId]: { ...current, content: fullContent },
+          },
+        };
       });
     });
 
     socketService.on('message:complete', (data) => {
       const { message, sessionId } = data;
       set((state) => {
-        // Add the completed message to the messages map
-        const newMessages = new Map(state.messages);
-        const sessionMessages = newMessages.get(sessionId) ?? [];
-        newMessages.set(sessionId, [...sessionMessages, message]);
-
-        // Clear streaming state
-        const newStreamingMessages = new Map(state.streamingMessages);
-        newStreamingMessages.delete(sessionId);
-
-        // Update session in the list
-        const newSessions = state.sessions.map((s) =>
-          s.id === sessionId
-            ? { ...s, messageCount: s.messageCount + 1, lastMessageAt: message.createdAt, updatedAt: Date.now() }
-            : s
-        );
+        const { [sessionId]: _, ...restStreaming } = state.streamingMessages;
+        const sessionMessages = state.messages[sessionId] ?? [];
 
         return {
-          messages: newMessages,
-          streamingMessages: newStreamingMessages,
-          sessions: newSessions,
+          messages: {
+            ...state.messages,
+            [sessionId]: [...sessionMessages, message],
+          },
+          streamingMessages: restStreaming,
+          sessions: state.sessions.map((s) =>
+            s.id === sessionId
+              ? { ...s, messageCount: s.messageCount + 1, lastMessageAt: message.createdAt, updatedAt: Date.now() }
+              : s
+          ),
           isSending: false,
         };
       });
@@ -100,10 +93,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
     socketService.on('message:error', (data) => {
       const { sessionId, error } = data;
       set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        newStreamingMessages.delete(sessionId);
+        const { [sessionId]: _, ...restStreaming } = state.streamingMessages;
         return {
-          streamingMessages: newStreamingMessages,
+          streamingMessages: restStreaming,
           isSending: false,
           error,
         };
@@ -113,67 +105,69 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
     socketService.on('tool:start', (data) => {
       const { sessionId, tool } = data;
       set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        const current = newStreamingMessages.get(sessionId);
-        if (current) {
-          newStreamingMessages.set(sessionId, {
-            ...current,
-            toolExecutions: [...current.toolExecutions, tool],
-          });
-        }
-        return { streamingMessages: newStreamingMessages };
+        const current = state.streamingMessages[sessionId];
+        if (!current) return state;
+        return {
+          streamingMessages: {
+            ...state.streamingMessages,
+            [sessionId]: {
+              ...current,
+              toolExecutions: [...current.toolExecutions, tool],
+            },
+          },
+        };
       });
     });
 
     socketService.on('tool:update', (data) => {
       const { sessionId, toolId, status, output } = data;
       set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        const current = newStreamingMessages.get(sessionId);
-        if (current) {
-          const updatedTools = current.toolExecutions.map((t) =>
-            t.id === toolId ? { ...t, status, output: output ?? t.output } : t
-          );
-          newStreamingMessages.set(sessionId, {
-            ...current,
-            toolExecutions: updatedTools,
-          });
-        }
-        return { streamingMessages: newStreamingMessages };
+        const current = state.streamingMessages[sessionId];
+        if (!current) return state;
+        return {
+          streamingMessages: {
+            ...state.streamingMessages,
+            [sessionId]: {
+              ...current,
+              toolExecutions: current.toolExecutions.map((t) =>
+                t.id === toolId ? { ...t, status, output: output ?? t.output } : t
+              ),
+            },
+          },
+        };
       });
     });
 
     socketService.on('tool:complete', (data) => {
       const { sessionId, tool } = data;
       set((state) => {
-        const newStreamingMessages = new Map(state.streamingMessages);
-        const current = newStreamingMessages.get(sessionId);
-        if (current) {
-          const updatedTools = current.toolExecutions.map((t) =>
-            t.id === tool.id ? tool : t
-          );
-          newStreamingMessages.set(sessionId, {
-            ...current,
-            toolExecutions: updatedTools,
-          });
-        }
-        return { streamingMessages: newStreamingMessages };
+        const current = state.streamingMessages[sessionId];
+        if (!current) return state;
+        return {
+          streamingMessages: {
+            ...state.streamingMessages,
+            [sessionId]: {
+              ...current,
+              toolExecutions: current.toolExecutions.map((t) =>
+                t.id === tool.id ? tool : t
+              ),
+            },
+          },
+        };
       });
     });
   };
 
   return {
-    // Initial state
     sessions: [],
     currentSessionId: null,
-    messages: new Map(),
-    streamingMessages: new Map(),
+    messages: {},
+    streamingMessages: {},
     isLoading: false,
     isConnected: false,
     isSending: false,
     error: null,
 
-    // Actions
     connect: async () => {
       try {
         set({ isLoading: true, error: null });
@@ -230,29 +224,38 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
       const state = get();
 
       // If we already have messages for this session, just select it
-      if (state.messages.has(sessionId)) {
+      if (state.messages[sessionId]) {
         set({ currentSessionId: sessionId });
         return;
       }
 
+      // Track this request to prevent race conditions
+      pendingSessionRequest = sessionId;
+
       try {
-        set({ isLoading: true, error: null });
+        set({ isLoading: true, error: null, currentSessionId: sessionId });
         const sessionWithMessages: SessionWithMessages = await socketService.getSession(sessionId);
 
-        set((state) => {
-          const newMessages = new Map(state.messages);
-          newMessages.set(sessionId, sessionWithMessages.messages);
-          return {
-            messages: newMessages,
-            currentSessionId: sessionId,
-            isLoading: false,
-          };
-        });
-      } catch (error) {
-        set({
+        // Only apply if this is still the pending request (prevents race condition)
+        if (pendingSessionRequest !== sessionId) {
+          return;
+        }
+
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [sessionId]: sessionWithMessages.messages,
+          },
           isLoading: false,
-          error: error instanceof Error ? error.message : 'Failed to load session',
-        });
+        }));
+      } catch (error) {
+        // Only show error if this is still the active request
+        if (pendingSessionRequest === sessionId) {
+          set({
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Failed to load session',
+          });
+        }
       }
     },
 
@@ -260,16 +263,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
       try {
         await socketService.deleteSession(sessionId);
         set((state) => {
-          const newMessages = new Map(state.messages);
-          newMessages.delete(sessionId);
-
-          const newStreamingMessages = new Map(state.streamingMessages);
-          newStreamingMessages.delete(sessionId);
+          const { [sessionId]: _msgs, ...restMessages } = state.messages;
+          const { [sessionId]: _stream, ...restStreaming } = state.streamingMessages;
 
           return {
             sessions: state.sessions.filter((s) => s.id !== sessionId),
-            messages: newMessages,
-            streamingMessages: newStreamingMessages,
+            messages: restMessages,
+            streamingMessages: restStreaming,
             currentSessionId: state.currentSessionId === sessionId ? null : state.currentSessionId,
           };
         });
@@ -297,7 +297,6 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
       const { currentSessionId, isSending } = get();
       if (!currentSessionId || isSending) return;
 
-      // Add user message immediately
       const userMessage: Message = {
         id: `temp-${Date.now()}`,
         sessionId: currentSessionId,
@@ -307,12 +306,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
         updatedAt: Date.now(),
       };
 
-      set((state) => {
-        const newMessages = new Map(state.messages);
-        const sessionMessages = newMessages.get(currentSessionId) ?? [];
-        newMessages.set(currentSessionId, [...sessionMessages, userMessage]);
-        return { messages: newMessages, isSending: true };
-      });
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [currentSessionId]: [...(state.messages[currentSessionId] ?? []), userMessage],
+        },
+        isSending: true,
+      }));
 
       socketService.sendMessage({ sessionId: currentSessionId, content });
     },
@@ -322,9 +322,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => {
       if (currentSessionId) {
         socketService.cancelMessage(currentSessionId);
         set((state) => {
-          const newStreamingMessages = new Map(state.streamingMessages);
-          newStreamingMessages.delete(currentSessionId);
-          return { streamingMessages: newStreamingMessages, isSending: false };
+          const { [currentSessionId]: _, ...restStreaming } = state.streamingMessages;
+          return { streamingMessages: restStreaming, isSending: false };
         });
       }
     },

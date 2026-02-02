@@ -20,8 +20,8 @@ export const ChatContainer: React.FC = () => {
   } = useSessionsStore();
 
   const currentSession = sessions.find((s) => s.id === currentSessionId);
-  const currentMessages = currentSessionId ? messages.get(currentSessionId) ?? [] : [];
-  const streamingMessage = currentSessionId ? streamingMessages.get(currentSessionId) : undefined;
+  const currentMessages = currentSessionId ? messages[currentSessionId] ?? [] : [];
+  const streamingMessage = currentSessionId ? streamingMessages[currentSessionId] : undefined;
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {

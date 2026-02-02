@@ -4,7 +4,6 @@ import {
   MoreHorizontal,
   Pencil,
   Trash2,
-  Archive,
   Check,
   X,
 } from 'lucide-react';
@@ -19,7 +18,6 @@ interface SessionItemProps {
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
-  onArchive: () => void;
 }
 
 export const SessionItem: React.FC<SessionItemProps> = ({
@@ -28,7 +26,6 @@ export const SessionItem: React.FC<SessionItemProps> = ({
   onSelect,
   onRename,
   onDelete,
-  onArchive,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(session.name);
@@ -67,12 +64,6 @@ export const SessionItem: React.FC<SessionItemProps> = ({
     if (window.confirm('Delete this conversation? This cannot be undone.')) {
       onDelete();
     }
-    setShowMenu(false);
-  };
-
-  const handleArchive = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onArchive();
     setShowMenu(false);
   };
 
@@ -174,13 +165,6 @@ export const SessionItem: React.FC<SessionItemProps> = ({
               >
                 <Pencil size={14} />
                 Rename
-              </button>
-              <button
-                onClick={handleArchive}
-                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-dark-200 hover:bg-dark-700 transition-colors"
-              >
-                <Archive size={14} />
-                Archive
               </button>
               <div className="border-t border-dark-700 my-1" />
               <button

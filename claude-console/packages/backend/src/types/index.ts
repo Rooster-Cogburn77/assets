@@ -1,30 +1,22 @@
-import { z } from 'zod';
-
 // ============================================================================
 // Core Message Types
 // ============================================================================
 
-export const MessageRoleSchema = z.enum(['user', 'assistant', 'system']);
-export type MessageRole = z.infer<typeof MessageRoleSchema>;
-
-export const ToolExecutionStatusSchema = z.enum(['pending', 'running', 'completed', 'error']);
-export type ToolExecutionStatus = z.infer<typeof ToolExecutionStatusSchema>;
-
-export const ToolTypeSchema = z.enum([
-  'Read',
-  'Write',
-  'Edit',
-  'Bash',
-  'Glob',
-  'Grep',
-  'WebFetch',
-  'WebSearch',
-  'Task',
-  'TodoWrite',
-  'NotebookEdit',
-  'Unknown'
-]);
-export type ToolType = z.infer<typeof ToolTypeSchema>;
+export type MessageRole = 'user' | 'assistant' | 'system';
+export type ToolExecutionStatus = 'pending' | 'running' | 'completed' | 'error';
+export type ToolType =
+  | 'Read'
+  | 'Write'
+  | 'Edit'
+  | 'Bash'
+  | 'Glob'
+  | 'Grep'
+  | 'WebFetch'
+  | 'WebSearch'
+  | 'Task'
+  | 'TodoWrite'
+  | 'NotebookEdit'
+  | 'Unknown';
 
 export interface ToolExecution {
   id: string;
@@ -46,15 +38,13 @@ export interface Message {
   toolExecutions?: ToolExecution[];
   createdAt: number;
   updatedAt: number;
-  isStreaming?: boolean;
 }
 
 // ============================================================================
 // Session Types
 // ============================================================================
 
-export const SessionStatusSchema = z.enum(['active', 'idle', 'archived']);
-export type SessionStatus = z.infer<typeof SessionStatusSchema>;
+export type SessionStatus = 'active' | 'idle' | 'archived';
 
 export interface Session {
   id: string;
@@ -65,7 +55,7 @@ export interface Session {
   updatedAt: number;
   lastMessageAt?: number;
   messageCount: number;
-  claudeSessionId?: string; // Internal Claude Code session ID for resuming
+  claudeSessionId?: string;
 }
 
 export interface SessionWithMessages extends Session {
@@ -76,19 +66,16 @@ export interface SessionWithMessages extends Session {
 // WebSocket Event Types
 // ============================================================================
 
-// Client -> Server Events
 export interface ClientToServerEvents {
   'session:create': (data: CreateSessionRequest, callback: (response: SessionResponse) => void) => void;
   'session:list': (callback: (response: SessionListResponse) => void) => void;
   'session:get': (sessionId: string, callback: (response: SessionDetailResponse) => void) => void;
   'session:delete': (sessionId: string, callback: (response: BaseResponse) => void) => void;
   'session:rename': (data: RenameSessionRequest, callback: (response: SessionResponse) => void) => void;
-  'session:archive': (sessionId: string, callback: (response: SessionResponse) => void) => void;
   'message:send': (data: SendMessageRequest) => void;
   'message:cancel': (sessionId: string) => void;
 }
 
-// Server -> Client Events
 export interface ServerToClientEvents {
   'message:start': (data: MessageStartEvent) => void;
   'message:stream': (data: MessageStreamEvent) => void;
@@ -101,14 +88,11 @@ export interface ServerToClientEvents {
   'connection:status': (data: ConnectionStatusEvent) => void;
 }
 
-// Inter-server Events (for scaling)
 export interface InterServerEvents {
   ping: () => void;
 }
 
-// Socket Data
 export interface SocketData {
-  userId?: string;
   connectedAt: number;
 }
 
@@ -206,23 +190,6 @@ export interface ConnectionStatusEvent {
 }
 
 // ============================================================================
-// Configuration Types
-// ============================================================================
-
-export interface ServerConfig {
-  port: number;
-  host: string;
-  corsOrigins: string[];
-  logLevel: 'debug' | 'info' | 'warn' | 'error';
-  dbPath: string;
-  claudePath: string;
-  defaultWorkingDirectory: string;
-  maxConcurrentSessions: number;
-  sessionTimeoutMs: number;
-  streamBufferMs: number;
-}
-
-// ============================================================================
 // Database Types
 // ============================================================================
 
@@ -243,7 +210,7 @@ export interface DbMessage {
   session_id: string;
   role: string;
   content: string;
-  tool_executions: string | null; // JSON string
+  tool_executions: string | null;
   created_at: number;
   updated_at: number;
 }

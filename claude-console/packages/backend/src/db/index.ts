@@ -2,10 +2,7 @@ import Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { config } from '../config/index.js';
-import { createLogger } from '../utils/logger.js';
 import type { DbSession, DbMessage, Session, Message, ToolExecution } from '../types/index.js';
-
-const logger = createLogger('Database');
 
 let db: Database.Database | null = null;
 
@@ -19,19 +16,16 @@ export function getDatabase(): Database.Database {
 export function initDatabase(): void {
   const dbDir = path.dirname(config.dbPath);
 
-  // Ensure the data directory exists
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true });
-    logger.info('Created database directory', { path: dbDir });
   }
 
   db = new Database(config.dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
 
-  logger.info('Database initialized', { path: config.dbPath });
-
   runMigrations();
+  console.log(`[DB] Initialized: ${config.dbPath}`);
 }
 
 function runMigrations(): void {
@@ -66,21 +60,17 @@ function runMigrations(): void {
     )
   `);
 
-  // Create indexes
   database.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions(updated_at);
   `);
-
-  logger.info('Database migrations completed');
 }
 
 export function closeDatabase(): void {
   if (db) {
     db.close();
     db = null;
-    logger.info('Database connection closed');
   }
 }
 

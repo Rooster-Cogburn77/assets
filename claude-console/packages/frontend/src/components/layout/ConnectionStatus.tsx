@@ -1,7 +1,6 @@
 import React from 'react';
-import { Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { WifiOff, Loader2 } from 'lucide-react';
 import { useSessionsStore } from '@/store/sessions';
-import { cn } from '@/utils';
 
 export const ConnectionStatus: React.FC = () => {
   const { isConnected, isLoading, error } = useSessionsStore();

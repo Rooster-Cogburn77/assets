@@ -2,15 +2,13 @@ import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config/index.js';
-import { createLogger } from '../utils/logger.js';
 import type {
   Message,
   ToolExecution,
   ToolType,
-  ToolExecutionStatus,
 } from '../types/index.js';
 
-const logger = createLogger('ClaudeService');
+const PROCESS_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max per request
 
 // ============================================================================
 // Types
@@ -20,17 +18,6 @@ interface ClaudeStreamEvent {
   type: string;
   subtype?: string;
   session_id?: string;
-  message?: {
-    id?: string;
-    role?: string;
-    content?: Array<{
-      type: string;
-      text?: string;
-      id?: string;
-      name?: string;
-      input?: Record<string, unknown>;
-    }>;
-  };
   event?: {
     type?: string;
     index?: number;
@@ -43,18 +30,26 @@ interface ClaudeStreamEvent {
       type?: string;
       id?: string;
       name?: string;
-      input?: Record<string, unknown>;
     };
   };
   result?: string;
-  duration_ms?: number;
-  num_turns?: number;
 }
 
 interface ActiveSession {
   process: ChildProcess;
   claudeSessionId?: string;
   abortController: AbortController;
+  timeoutId: NodeJS.Timeout;
+}
+
+interface StreamContext {
+  sessionId: string;
+  messageId: string;
+  content: string;
+  claudeSessionId?: string;
+  tools: Map<string, ToolExecution>;
+  toolInputBuffers: Map<string, string>;
+  currentToolIndex: number;
 }
 
 // ============================================================================
@@ -62,13 +57,9 @@ interface ActiveSession {
 // ============================================================================
 
 export class ClaudeService extends EventEmitter {
-  private activeSessions: Map<string, ActiveSession> = new Map();
+  private activeSessions = new Map<string, ActiveSession>();
 
-  constructor() {
-    super();
-  }
-
-  async sendMessage(
+  sendMessage(
     sessionId: string,
     content: string,
     options: {
@@ -76,44 +67,49 @@ export class ClaudeService extends EventEmitter {
       resumeSessionId?: string;
       allowedTools?: string[];
     }
-  ): Promise<void> {
-    // Cancel any existing process for this session
+  ): void {
     this.cancelSession(sessionId);
 
     const messageId = uuidv4();
     const abortController = new AbortController();
 
-    const args = this.buildClaudeArgs(content, options);
+    const args = this.buildArgs(content, options);
 
-    logger.info('Starting Claude process', {
-      sessionId,
-      messageId,
-      workingDirectory: options.workingDirectory,
-      resume: options.resumeSessionId ? 'yes' : 'no',
-    });
-
-    const process = spawn(config.claudePath, args, {
+    const proc = spawn(config.claudePath, args, {
       cwd: options.workingDirectory,
-      env: {
-        ...process.env,
-        FORCE_COLOR: '0', // Disable color codes in output
-      },
+      env: { ...process.env, FORCE_COLOR: '0' },
       signal: abortController.signal,
     });
 
+    // Timeout - kill process if it takes too long
+    const timeoutId = setTimeout(() => {
+      console.error(`[Claude] Process timeout after ${PROCESS_TIMEOUT_MS}ms`, { sessionId });
+      this.cancelSession(sessionId);
+      this.emit('message:error', {
+        sessionId,
+        messageId,
+        error: 'Request timed out',
+        code: 'TIMEOUT',
+      });
+    }, PROCESS_TIMEOUT_MS);
+
     this.activeSessions.set(sessionId, {
-      process,
+      process: proc,
       claudeSessionId: options.resumeSessionId,
       abortController,
+      timeoutId,
     });
 
-    let fullContent = '';
-    let claudeSessionId: string | undefined = options.resumeSessionId;
-    let buffer = '';
-    const toolExecutions: Map<string, ToolExecution> = new Map();
-    const toolContentBuffer: Map<string, string> = new Map();
+    const ctx: StreamContext = {
+      sessionId,
+      messageId,
+      content: '',
+      claudeSessionId: options.resumeSessionId,
+      tools: new Map(),
+      toolInputBuffers: new Map(),
+      currentToolIndex: -1,
+    };
 
-    // Emit message start
     this.emit('message:start', {
       messageId,
       sessionId,
@@ -121,83 +117,45 @@ export class ClaudeService extends EventEmitter {
       createdAt: Date.now(),
     });
 
-    process.stdout?.on('data', (data: Buffer) => {
-      buffer += data.toString();
+    let buffer = '';
 
-      // Process complete JSON lines
+    proc.stdout?.on('data', (data: Buffer) => {
+      buffer += data.toString();
       const lines = buffer.split('\n');
-      buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
+      buffer = lines.pop() ?? '';
 
       for (const line of lines) {
         if (!line.trim()) continue;
-
-        try {
-          const event = JSON.parse(line) as ClaudeStreamEvent;
-          this.processStreamEvent(
-            event,
-            sessionId,
-            messageId,
-            fullContent,
-            claudeSessionId,
-            toolExecutions,
-            toolContentBuffer,
-            (newContent) => {
-              fullContent = newContent;
-            },
-            (newSessionId) => {
-              claudeSessionId = newSessionId;
-              const activeSession = this.activeSessions.get(sessionId);
-              if (activeSession) {
-                activeSession.claudeSessionId = newSessionId;
-              }
-            }
-          );
-        } catch (e) {
-          // Not JSON or parse error - might be regular output
-          logger.debug('Non-JSON output from Claude', { line });
-        }
+        this.processLine(line, ctx);
       }
     });
 
-    process.stderr?.on('data', (data: Buffer) => {
-      const stderr = data.toString();
-      logger.warn('Claude stderr', { sessionId, stderr });
+    proc.stderr?.on('data', (data: Buffer) => {
+      console.warn(`[Claude] stderr:`, data.toString());
     });
 
-    process.on('close', (code) => {
-      logger.info('Claude process exited', { sessionId, messageId, code });
+    proc.on('close', (code) => {
+      clearTimeout(timeoutId);
 
-      // Process any remaining buffer
+      // Process remaining buffer
       if (buffer.trim()) {
-        try {
-          const event = JSON.parse(buffer) as ClaudeStreamEvent;
-          this.processStreamEvent(
-            event,
-            sessionId,
-            messageId,
-            fullContent,
-            claudeSessionId,
-            toolExecutions,
-            toolContentBuffer,
-            (newContent) => {
-              fullContent = newContent;
-            },
-            (newSessionId) => {
-              claudeSessionId = newSessionId;
-            }
-          );
-        } catch {
-          // Ignore
+        this.processLine(buffer, ctx);
+      }
+
+      // Mark any running tools as completed
+      for (const tool of ctx.tools.values()) {
+        if (tool.status === 'running' || tool.status === 'pending') {
+          tool.status = 'completed';
+          tool.completedAt = Date.now();
         }
       }
 
-      // Emit message complete
       const message: Message = {
         id: messageId,
         sessionId,
         role: 'assistant',
-        content: fullContent,
-        toolExecutions: Array.from(toolExecutions.values()),
+        content: ctx.content,
+        toolExecutions: Array.from(ctx.tools.values()),
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
@@ -205,20 +163,20 @@ export class ClaudeService extends EventEmitter {
       this.emit('message:complete', {
         message,
         sessionId,
-        claudeSessionId,
+        claudeSessionId: ctx.claudeSessionId,
       });
 
       this.activeSessions.delete(sessionId);
     });
 
-    process.on('error', (error) => {
+    proc.on('error', (error) => {
+      clearTimeout(timeoutId);
+
       if ((error as NodeJS.ErrnoException).code === 'ABORT_ERR') {
-        logger.info('Claude process aborted', { sessionId });
-        return;
+        return; // Expected on cancel
       }
 
-      logger.error('Claude process error', { sessionId, error: error.message });
-
+      console.error(`[Claude] Process error:`, error.message);
       this.emit('message:error', {
         sessionId,
         messageId,
@@ -230,126 +188,124 @@ export class ClaudeService extends EventEmitter {
     });
   }
 
-  private processStreamEvent(
-    event: ClaudeStreamEvent,
-    sessionId: string,
-    messageId: string,
-    currentContent: string,
-    _claudeSessionId: string | undefined,
-    toolExecutions: Map<string, ToolExecution>,
-    toolContentBuffer: Map<string, string>,
-    updateContent: (content: string) => void,
-    updateClaudeSessionId: (sessionId: string) => void
-  ): void {
-    // Handle init event - get session ID
+  private processLine(line: string, ctx: StreamContext): void {
+    let event: ClaudeStreamEvent;
+    try {
+      event = JSON.parse(line);
+    } catch (err) {
+      // Log non-JSON lines at debug level - these are expected sometimes
+      if (line.trim()) {
+        console.debug(`[Claude] Non-JSON output: ${line.slice(0, 100)}`);
+      }
+      return;
+    }
+
+    // Session init
     if (event.type === 'message' && event.subtype === 'init' && event.session_id) {
-      updateClaudeSessionId(event.session_id);
-      this.emit('session:updated', { sessionId, claudeSessionId: event.session_id });
-    }
-
-    // Handle stream events
-    if (event.type === 'stream_event' && event.event) {
-      const streamEvent = event.event;
-
-      // Content block start - could be text or tool use
-      if (streamEvent.type === 'content_block_start' && streamEvent.content_block) {
-        const block = streamEvent.content_block;
-
-        if (block.type === 'tool_use' && block.id && block.name) {
-          const toolExecution: ToolExecution = {
-            id: block.id,
-            type: this.mapToolName(block.name),
-            name: block.name,
-            input: {},
-            status: 'pending',
-            startedAt: Date.now(),
-          };
-          toolExecutions.set(block.id, toolExecution);
-          toolContentBuffer.set(block.id, '');
-
-          this.emit('tool:start', {
-            messageId,
-            sessionId,
-            tool: toolExecution,
-          });
-        }
-      }
-
-      // Content delta - text or tool input
-      if (streamEvent.type === 'content_block_delta' && streamEvent.delta) {
-        const delta = streamEvent.delta;
-
-        if (delta.type === 'text_delta' && delta.text) {
-          const newContent = currentContent + delta.text;
-          updateContent(newContent);
-
-          this.emit('message:stream', {
-            messageId,
-            sessionId,
-            delta: delta.text,
-            fullContent: newContent,
-          });
-        }
-
-        if (delta.type === 'input_json_delta' && delta.partial_json) {
-          // Find the current tool by index
-          const toolId = Array.from(toolExecutions.keys())[toolExecutions.size - 1];
-          if (toolId) {
-            const currentBuffer = toolContentBuffer.get(toolId) ?? '';
-            toolContentBuffer.set(toolId, currentBuffer + delta.partial_json);
-          }
-        }
-      }
-
-      // Content block stop - finalize tool
-      if (streamEvent.type === 'content_block_stop') {
-        // Find the most recent tool and update its input
-        const toolId = Array.from(toolExecutions.keys())[toolExecutions.size - 1];
-        if (toolId) {
-          const tool = toolExecutions.get(toolId);
-          const inputJson = toolContentBuffer.get(toolId);
-
-          if (tool && inputJson) {
-            try {
-              tool.input = JSON.parse(inputJson);
-              tool.status = 'running';
-              toolExecutions.set(toolId, tool);
-
-              this.emit('tool:update', {
-                messageId,
-                sessionId,
-                toolId: tool.id,
-                status: 'running' as ToolExecutionStatus,
-              });
-            } catch {
-              // Invalid JSON, keep empty input
-            }
-          }
-        }
+      ctx.claudeSessionId = event.session_id;
+      const session = this.activeSessions.get(ctx.sessionId);
+      if (session) {
+        session.claudeSessionId = event.session_id;
       }
     }
 
-    // Handle result event (tool results come back in content)
+    // Result - mark tools complete
     if (event.type === 'result') {
-      // Mark all pending tools as completed
-      for (const [id, tool] of toolExecutions) {
-        if (tool.status === 'running' || tool.status === 'pending') {
+      for (const tool of ctx.tools.values()) {
+        if (tool.status !== 'completed') {
           tool.status = 'completed';
           tool.completedAt = Date.now();
-          toolExecutions.set(id, tool);
 
           this.emit('tool:complete', {
-            messageId,
-            sessionId,
+            messageId: ctx.messageId,
+            sessionId: ctx.sessionId,
             tool,
           });
         }
+      }
+      return;
+    }
+
+    if (event.type !== 'stream_event' || !event.event) return;
+
+    const { type, index, delta, content_block } = event.event;
+
+    // Tool start
+    if (type === 'content_block_start' && content_block?.type === 'tool_use') {
+      const toolId = content_block.id;
+      const toolName = content_block.name;
+
+      if (toolId && toolName) {
+        ctx.currentToolIndex = index ?? -1;
+
+        const tool: ToolExecution = {
+          id: toolId,
+          type: this.mapToolName(toolName),
+          name: toolName,
+          input: {},
+          status: 'pending',
+          startedAt: Date.now(),
+        };
+
+        ctx.tools.set(toolId, tool);
+        ctx.toolInputBuffers.set(toolId, '');
+
+        this.emit('tool:start', {
+          messageId: ctx.messageId,
+          sessionId: ctx.sessionId,
+          tool,
+        });
+      }
+    }
+
+    // Text delta
+    if (type === 'content_block_delta' && delta?.type === 'text_delta' && delta.text) {
+      ctx.content += delta.text;
+      this.emit('message:stream', {
+        messageId: ctx.messageId,
+        sessionId: ctx.sessionId,
+        delta: delta.text,
+        fullContent: ctx.content,
+      });
+    }
+
+    // Tool input delta - use the event index to find the right tool
+    if (type === 'content_block_delta' && delta?.type === 'input_json_delta' && delta.partial_json) {
+      // Find tool by matching the current content block index
+      const tool = Array.from(ctx.tools.values()).find((_, i) => i === ctx.tools.size - 1);
+      if (tool) {
+        const current = ctx.toolInputBuffers.get(tool.id) ?? '';
+        ctx.toolInputBuffers.set(tool.id, current + delta.partial_json);
+      }
+    }
+
+    // Content block stop - finalize tool input
+    if (type === 'content_block_stop') {
+      const tool = Array.from(ctx.tools.values()).pop();
+      if (tool && tool.status === 'pending') {
+        const inputJson = ctx.toolInputBuffers.get(tool.id);
+        if (inputJson) {
+          try {
+            tool.input = JSON.parse(inputJson);
+          } catch (err) {
+            console.warn(`[Claude] Failed to parse tool input for ${tool.name}:`, err);
+            tool.input = { _raw: inputJson, _parseError: true };
+          }
+        }
+        tool.status = 'running';
+
+        this.emit('tool:update', {
+          messageId: ctx.messageId,
+          sessionId: ctx.sessionId,
+          toolId: tool.id,
+          status: 'running',
+        });
       }
     }
   }
 
   private mapToolName(name: string): ToolType {
-    const toolMap: Record<string, ToolType> = {
+    const map: Record<string, ToolType> = {
       Read: 'Read',
       Write: 'Write',
       Edit: 'Edit',
@@ -362,24 +318,20 @@ export class ClaudeService extends EventEmitter {
       TodoWrite: 'TodoWrite',
       NotebookEdit: 'NotebookEdit',
     };
-    return toolMap[name] ?? 'Unknown';
+    return map[name] ?? 'Unknown';
   }
 
-  private buildClaudeArgs(content: string, options: {
+  private buildArgs(content: string, options: {
     resumeSessionId?: string;
     allowedTools?: string[];
   }): string[] {
-    const args = [
-      '-p', content,
-      '--output-format', 'stream-json',
-      '--verbose',
-    ];
+    const args = ['-p', content, '--output-format', 'stream-json', '--verbose'];
 
     if (options.resumeSessionId) {
       args.push('--resume', options.resumeSessionId);
     }
 
-    if (options.allowedTools && options.allowedTools.length > 0) {
+    if (options.allowedTools?.length) {
       args.push('--allowedTools', options.allowedTools.join(','));
     }
 
@@ -387,27 +339,18 @@ export class ClaudeService extends EventEmitter {
   }
 
   cancelSession(sessionId: string): void {
-    const activeSession = this.activeSessions.get(sessionId);
-    if (activeSession) {
-      logger.info('Cancelling session', { sessionId });
-      activeSession.abortController.abort();
-      activeSession.process.kill('SIGTERM');
+    const session = this.activeSessions.get(sessionId);
+    if (session) {
+      clearTimeout(session.timeoutId);
+      session.abortController.abort();
+      session.process.kill('SIGTERM');
       this.activeSessions.delete(sessionId);
     }
-  }
-
-  getActiveSessionCount(): number {
-    return this.activeSessions.size;
   }
 
   isSessionActive(sessionId: string): boolean {
     return this.activeSessions.has(sessionId);
   }
-
-  getClaudeSessionId(sessionId: string): string | undefined {
-    return this.activeSessions.get(sessionId)?.claudeSessionId;
-  }
 }
 
-// Singleton instance
 export const claudeService = new ClaudeService();
